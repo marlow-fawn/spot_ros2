@@ -1,0 +1,4 @@
+name: spot
+channels:
+  - defaults
+prefix: /home/mfawn/miniconda3/envs/spot
