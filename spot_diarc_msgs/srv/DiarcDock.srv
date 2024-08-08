@@ -1,0 +1,4 @@
+uint32 dockid
+---
+bool success
+string message
