@@ -9,3 +9,5 @@ docs/source/*.rst
 build/*
 install/*
 log/*
+/spot_phi.yaml
+/spot_psi.yaml
