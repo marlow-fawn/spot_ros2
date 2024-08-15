@@ -10,13 +10,11 @@ import rclpy
 from bosdyn_msgs.conversions import convert
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo
-from spot_diarc_msgs.srv import DiarcCommand
-from spot_diarc_msgs.srv import DiarcDock
-from spot_diarc_msgs.srv import DiarcPickup
+from spot_diarc_msgs.srv import DiarcCommand, DiarcDock, DiarcPickup, DiarcMoveto
 from spot_msgs.action import RobotCommand, Manipulation  # type: ignore
 from spot_msgs.srv import GetInverseKinematicSolutions  # type: ignore
 from std_srvs.srv import Trigger
+from .ik import IKWrapper
 
 TRIGGER_SERVICES = [
     "claim",
@@ -51,34 +49,42 @@ class DiarcWrapper(Node):
     def __init__(self):
         super().__init__('diarc_wrapper')
         self._transforms: List[geometry_msgs.msg.TransformStamped] = []
-        self.client_node = rclpy.create_node('client_node')  # Create a node for calling clients
+        self._client_node = rclpy.create_node('client_node')  # Create a node for calling clients
         self._robot_command_client = ActionClientWrapper(Manipulation, "manipulation", self)
 
         # Add the clients that this node consumes
-        self.service_map = {}
+        self._service_map = {}
         for service in TRIGGER_SERVICES:  # Add all of the simple trigger services to the client node
-            self.service_map[service] = TriggerClient(self.client_node, service)
+            self._service_map[service] = TriggerClient(self._client_node, service)
 
         # Add the services that this node provides
         self.create_service(DiarcPickup, 'diarc_pickup', self.diarc_pickup_callback)
         self.create_service(DiarcCommand, 'diarc_command', self.diarc_command_callback)
         self.create_service(DiarcDock, 'diarc_dock', self.diarc_dock_callback)
+        self.create_service(DiarcMoveto, 'diarc_moveto', self.diarc_moveto_callback)
 
-        self.startup()
+        self._ik_wrapper = IKWrapper(self, self._client_node)
 
         print("Done init")
 
     def startup(self):
-        self.service_map["claim"].client.call_async(Trigger.Request())
-        self.service_map["power_on"].client.call_async(Trigger.Request())
-        self.service_map["stand"].client.call_async(Trigger.Request())
+        self._service_map["claim"].client.call_async(Trigger.Request())
+        self._service_map["power_on"].client.call_async(Trigger.Request())
+        self._service_map["stand"].client.call_async(Trigger.Request())
 
     def shutdown(self):
-        self.service_map["sit"].client.call_async(Trigger.Request())
-        self.service_map["power_off"].client.call_async(Trigger.Request())
+        self._service_map["sit"].client.call_async(Trigger.Request())
+        self._service_map["power_off"].client.call_async(Trigger.Request())
 
-    def camera_info_sub_callback(self, msg):
-        self.camera_info = msg
+    def diarc_moveto_callback(self, request, response):
+        print("In moveto callback")
+        res = self._ik_wrapper.move_to(request.x, request.y, request.z)
+        print(res)
+        response.success = True
+        return response
+
+    def diarc_gotolocation_callback(self, request, response):
+        pass
 
     def diarc_pickup_callback(self, request, response):
 
@@ -131,16 +137,16 @@ class DiarcWrapper(Node):
         return self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal)
 
     def diarc_dock_callback(self, request, response):
-        res = self.service_map[request.command].client.call_async(Trigger.Request())
+        res = self._service_map[request.command].client.call_async(Trigger.Request())
         response.success = res.success
         response.message = res.message
         return response
 
     async def diarc_command_callback(self, request, response):
         print(f"Calling {request.command}")
-        client = self.service_map[request.command].client
+        client = self._service_map[request.command].client
         future = client.call_async(Trigger.Request())
-        rclpy.spin_until_future_complete(self.client_node, future)
+        rclpy.spin_until_future_complete(self._client_node, future)
 
         try:
             res = future.result()
