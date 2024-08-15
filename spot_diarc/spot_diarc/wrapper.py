@@ -5,7 +5,11 @@ from rclpy.node import Node
 from .simple_spot_commander import SimpleSpotCommander
 from spot_diarc_msgs.srv import DiarcCommand
 from spot_diarc_msgs.srv import DiarcDock
+from spot_msgs.srv import Dock
 from std_srvs.srv import Trigger
+
+from spot_msgs.action import RobotCommand  # type: ignore
+from bdai_ros2_wrappers.action_client import ActionClientWrapper
 
 TRIGGER_SERVICES = [
     "claim",
@@ -19,14 +23,15 @@ TRIGGER_SERVICES = [
     "estop/hard",
     "estop/gentle",
     "estop/release",
+    "undock",
 ]
 
 
-class TriggerClient:
-    def __init__(self, node, name):
-        self.client = node.create_client(Trigger, name)
+class Client:
+    def __init__(self, node, name, srv=Trigger):
+        self.client = node.create_client(srv, name)
         while not self.client.wait_for_service(timeout_sec=1.0):
-            node.get_logger().info('service not available, waiting again...')
+            node.get_logger().info(f"service {name} not available, waiting again...")
         node.get_logger().info(f"Done with {name}")
 
 
@@ -38,15 +43,34 @@ class DiarcWrapper(Node):
 
         self.sub_node = rclpy.create_node('sub_node')
         for service in TRIGGER_SERVICES:
-            self.service_map[service] = TriggerClient(self.sub_node, service)
+            self.service_map[service] = Client(self.sub_node, service)
+
+        self.service_map["dock"] = Client(self.sub_node, "dock", Dock)
 
         self.create_service(DiarcCommand, 'diarc_command', self.diarc_command_callback)
         self.create_service(DiarcDock, 'diarc_dock', self.diarc_dock_callback)
+        self.create_service(DiarcNavigateto, 'diarc_navigate_to', self.diarc_navigate_to_callback)
 
-    def diarc_dock_callback(self, request, response):
-        res = self.service_map[request.command].client.call_async(Trigger.Request())
-        response.success = res.success
-        response.message = res.message
+        self.robot_command_client = ActionClientWrapper(RobotCommand, "robot_command")
+
+    async def diarc_dock_callback(self, request, response):
+        self.get_logger().info(f"Calling dock")
+        client = self.service_map["dock"].client
+        spot_request = Dock.Request()
+        spot_request.dock_id = request.dockid
+        future = client.call_async(spot_request)
+        rclpy.spin_until_future_complete(self.sub_node, future)
+
+        try:
+            res = future.result()
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
+            response.success = False
+            response.message = str(e)
+        else:
+            response.success = res.success
+            response.message = res.message
+            self.get_logger().info(f"Done with dock")
         return response
 
     async def diarc_command_callback(self, request, response):
@@ -66,6 +90,10 @@ class DiarcWrapper(Node):
             response.message = res.message
             self.get_logger().info(f"Done with {request.command}")
         return response
+
+    async def diarc_navigate_to_callback(self, request, response):
+
+
 
 
 def main():
