@@ -1,0 +1,10 @@
+uint32 sx
+uint32 sy
+uint32 sz
+uint32 ex
+uint32 ey
+uint32 ez
+string frame_name
+---
+bool success
+string message
