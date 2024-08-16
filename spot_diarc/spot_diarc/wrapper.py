@@ -58,10 +58,10 @@ class DiarcWrapper(Node):
             self._service_map[service] = TriggerClient(self._client_node, service)
 
         # Add the services that this node provides
-        self.create_service(DiarcPickup, 'diarc_pickup', self.diarc_pickup_callback)
-        self.create_service(DiarcCommand, 'diarc_command', self.diarc_command_callback)
-        self.create_service(DiarcDock, 'diarc_dock', self.diarc_dock_callback)
-        self.create_service(DiarcMoveto, 'diarc_moveto', self.diarc_moveto_callback)
+        self.create_service(DiarcPickup, 'diarc_pickup', self._diarc_pickup_callback)
+        self.create_service(DiarcCommand, 'diarc_command', self._diarc_command_callback)
+        self.create_service(DiarcDock, 'diarc_dock', self._diarc_dock_callback)
+        self.create_service(DiarcMoveto, 'diarc_moveto', self._diarc_moveto_callback)
 
         self._ik_wrapper = IKWrapper(self, self._client_node)
 
@@ -76,17 +76,17 @@ class DiarcWrapper(Node):
         self._service_map["sit"].client.call_async(Trigger.Request())
         self._service_map["power_off"].client.call_async(Trigger.Request())
 
-    def diarc_moveto_callback(self, request, response):
+    def _diarc_moveto_callback(self, request, response):
         print("In moveto callback")
         res = self._ik_wrapper.move_to(request.x, request.y, request.z)
         print(res)
         response.success = True
         return response
 
-    def diarc_gotolocation_callback(self, request, response):
+    def _diarc_go_to_location_callback(self, request, response):
         pass
 
-    def diarc_pickup_callback(self, request, response):
+    def _diarc_pickup_callback(self, request, response):
 
         print("In pickup")
 
@@ -99,11 +99,6 @@ class DiarcWrapper(Node):
         # small objects like this. For a bigger object like a shoe, 0 is better (use the entire
         # gripper)
         grasp.grasp_params.grasp_palm_to_fingertip = 0.6
-
-        # Tell the grasping system that we want a top-down grasp.
-
-        # Add a constraint that requests that the x-axis of the gripper is pointing in the
-        # negative-z direction in the vision frame.
 
         # The axis on the gripper is the x-axis.
         axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
@@ -124,8 +119,6 @@ class DiarcWrapper(Node):
         # Specify the frame we're using.
         grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME
 
-        print(grasp)
-
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
             pick_object_ray_in_world=grasp)
@@ -136,13 +129,13 @@ class DiarcWrapper(Node):
         print('Sending grasp request...')
         return self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal)
 
-    def diarc_dock_callback(self, request, response):
+    def _diarc_dock_callback(self, request, response):
         res = self._service_map[request.command].client.call_async(Trigger.Request())
         response.success = res.success
         response.message = res.message
         return response
 
-    async def diarc_command_callback(self, request, response):
+    def _diarc_command_callback(self, request, response):
         print(f"Calling {request.command}")
         client = self._service_map[request.command].client
         future = client.call_async(Trigger.Request())

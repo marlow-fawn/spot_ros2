@@ -1,22 +1,17 @@
-from typing import List
-import geometry_msgs.msg
-import numpy as np
 from bdai_ros2_wrappers.action_client import ActionClientWrapper
 from bdai_ros2_wrappers.tf_listener_wrapper import TFListenerWrapper
 from bosdyn.api.spot import inverse_kinematics_pb2, robot_command_pb2
 from bosdyn.client.frame_helpers import (
     BODY_FRAME_NAME,
-    GRAV_ALIGNED_BODY_FRAME_NAME,
-    GROUND_PLANE_FRAME_NAME,
     ODOM_FRAME_NAME,
-    get_a_tform_b, VISION_FRAME_NAME,
+    get_a_tform_b
 )
 from bosdyn.client.math_helpers import Quat, SE3Pose
 from bosdyn.client.robot_command import RobotCommandBuilder
 
 import rclpy
 from bosdyn_msgs.conversions import convert
-from tf2_ros import TransformBroadcaster, TransformStamped
+from tf2_ros import TransformStamped
 
 from spot_msgs.action import RobotCommand  # type: ignore
 from spot_msgs.srv import GetInverseKinematicSolutions  # type: ignore
@@ -55,7 +50,7 @@ class IKWrapper:
                    True the process runs without errors, False otherwise.
                """
 
-        root = VISION_FRAME_NAME
+        root = BODY_FRAME_NAME
         # Wait for the robot to publish the TF state.
         self._tf_listener.wait_for_a_tform_b(root, root)
 
@@ -124,6 +119,7 @@ class IKWrapper:
         result = self._robot_command_client.send_goal_and_wait(
             action_name="arm_move_one", goal=arm_command_goal, timeout_sec=10
         )
+        # Todo: Return result
         return True
 
     def _send_ik_request(
