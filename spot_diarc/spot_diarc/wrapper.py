@@ -49,15 +49,12 @@ class DiarcWrapper(Node):
 
         self.create_service(DiarcCommand, 'diarc_command', self.diarc_command_callback)
         self.create_service(DiarcDock, 'diarc_dock', self.diarc_dock_callback)
-        self.create_service(DiarcNavigateto, 'diarc_navigate_to', self.diarc_navigate_to_callback)
-
-        self.robot_command_client = ActionClientWrapper(RobotCommand, "robot_command")
 
     async def diarc_dock_callback(self, request, response):
         self.get_logger().info(f"Calling dock")
         client = self.service_map["dock"].client
         spot_request = Dock.Request()
-        spot_request.dock_id = request.dockid
+        spot_request.dock_id = int(request.dockid)
         future = client.call_async(spot_request)
         rclpy.spin_until_future_complete(self.sub_node, future)
 
@@ -90,11 +87,6 @@ class DiarcWrapper(Node):
             response.message = res.message
             self.get_logger().info(f"Done with {request.command}")
         return response
-
-    async def diarc_navigate_to_callback(self, request, response):
-
-
-
 
 def main():
     rclpy.init()

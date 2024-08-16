@@ -1,0 +1,7 @@
+# Calls the GetLocalizationState RPC, and get the
+# localization status and pose
+string trash
+---
+bool success
+string message
+geometry_msgs/Pose pose

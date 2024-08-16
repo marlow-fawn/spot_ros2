@@ -94,6 +94,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GraphNavClearGraph.srv"
   "srv/GraphNavSetLocalization.srv"
   "srv/GraphNavGetLocalizationPose.srv"
+  "srv/GraphNavGetLocalizationPoseUnstamped.srv"
   "srv/Dock.srv"
   "srv/GetGripperCameraParameters.srv"
   "srv/SetGripperCameraParameters.srv"
