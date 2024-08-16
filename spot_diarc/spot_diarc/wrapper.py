@@ -69,7 +69,7 @@ class DiarcWrapper(Node):
         for service in TRIGGER_SERVICES:
             self._service_map[service] = Client(self.sub_node, service)
 
-        self.service_map["dock"] = Client(self.sub_node, "dock", Dock)
+        self._service_map["dock"] = Client(self.sub_node, "dock", Dock)
         # Add the services that this node provides
         self.create_service(DiarcPickup, 'diarc_pickup', self._diarc_pickup_callback)
         self.create_service(DiarcCommand, 'diarc_command', self._diarc_command_callback)
@@ -162,7 +162,6 @@ class DiarcWrapper(Node):
             response.message = res.message
             self.get_logger().info(f"Done with dock")
 
-    async def diarc_command_callback(self, request, response):
     def _diarc_command_callback(self, request, response):
         print(f"Calling {request.command}")
         client = self._service_map[request.command].client

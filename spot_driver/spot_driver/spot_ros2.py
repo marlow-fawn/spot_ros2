@@ -2842,6 +2842,11 @@ class SpotROS(Node):
         self.run_navigate_to = False
         feedback_thread.join()
 
+        if resp[0]:
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+
         # run navigate_to
         resp = self.spot_wrapper.spot_graph_nav.navigate_to_existing_waypoint(
             goal_handle.request.navigate_to
