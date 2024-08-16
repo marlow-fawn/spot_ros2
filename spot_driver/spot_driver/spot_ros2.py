@@ -2833,19 +2833,15 @@ class SpotROS(Node):
             goal_handle.abort()
             return response
 
-        resp = self.spot_wrapper.spot_graph_nav.navigate_initial_localization(
-            upload_path=goal_handle.request.upload_path,
-            initial_localization_fiducial=goal_handle.request.initial_localization_fiducial,
-            initial_localization_waypoint=goal_handle.request.initial_localization_waypoint,
-        )
+        if goal_handle.request.initial_localization_waypoint:
+            resp = self.spot_wrapper.spot_graph_nav.navigate_initial_localization(
+                upload_path=goal_handle.request.upload_path,
+                initial_localization_fiducial=goal_handle.request.initial_localization_fiducial,
+                initial_localization_waypoint=goal_handle.request.initial_localization_waypoint,
+            )
 
-        self.run_navigate_to = False
-        feedback_thread.join()
-
-        if resp[0]:
-            goal_handle.succeed()
-        else:
-            goal_handle.abort()
+            self.run_navigate_to = False
+            feedback_thread.join()
 
         # run navigate_to
         resp = self.spot_wrapper.spot_graph_nav.navigate_to_existing_waypoint(

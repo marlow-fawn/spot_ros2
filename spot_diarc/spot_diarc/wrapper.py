@@ -65,11 +65,7 @@ class DiarcWrapper(Node):
         for service in TRIGGER_SERVICES:  # Add all of the simple trigger services to the client node
             self._service_map[service] = Client(self._client_node, service)
 
-        self.sub_node = rclpy.create_node('sub_node')
-        for service in TRIGGER_SERVICES:
-            self._service_map[service] = Client(self.sub_node, service)
-
-        self._service_map["dock"] = Client(self.sub_node, "dock", Dock)
+        self._service_map["dock"] = Client(self._client_node, "dock", Dock)
         # Add the services that this node provides
         self.create_service(DiarcPickup, 'diarc_pickup', self._diarc_pickup_callback)
         self.create_service(DiarcCommand, 'diarc_command', self._diarc_command_callback)
@@ -90,17 +86,14 @@ class DiarcWrapper(Node):
         self._service_map["sit"].client.call_async(Trigger.Request())
         self._service_map["power_off"].client.call_async(Trigger.Request())
 
-    def _diarc_moveto_callback(self, request, response):
+    async def _diarc_moveto_callback(self, request, response):
         print("In moveto callback")
         res = self._ik_wrapper.move_to(request.x, request.y, request.z)
         print(res)
         response.success = True
         return response
 
-    def _diarc_go_to_location_callback(self, request, response):
-        pass
-
-    def _diarc_pickup_callback(self, request, response):
+    async def _diarc_pickup_callback(self, request, response):
 
         print("In pickup")
 
@@ -143,13 +136,13 @@ class DiarcWrapper(Node):
         print('Sending grasp request...')
         return self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal)
 
-    def _diarc_dock_callback(self, request, response):
+    async def _diarc_dock_callback(self, request, response):
         self.get_logger().info(f"Calling dock")
         client = self._service_map["dock"].client
         spot_request = Dock.Request()
         spot_request.dock_id = int(request.dockid)
         future = client.call_async(spot_request)
-        rclpy.spin_until_future_complete(self.sub_node, future)
+        rclpy.spin_until_future_complete(self._client_node, future)
 
         try:
             res = future.result()
@@ -162,7 +155,7 @@ class DiarcWrapper(Node):
             response.message = res.message
             self.get_logger().info(f"Done with dock")
 
-    def _diarc_command_callback(self, request, response):
+    async def _diarc_command_callback(self, request, response):
         print(f"Calling {request.command}")
         client = self._service_map[request.command].client
         future = client.call_async(Trigger.Request())
