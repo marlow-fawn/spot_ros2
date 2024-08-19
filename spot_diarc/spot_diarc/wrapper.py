@@ -13,8 +13,11 @@ from rclpy.node import Node
 from spot_diarc_msgs.srv import DiarcCommand, DiarcDock, DiarcPickUp, DiarcMoveTo
 from spot_msgs.action import RobotCommand, Manipulation  # type: ignore
 from spot_msgs.srv import GetInverseKinematicSolutions  # type: ignore
+from spot_msgs.srv import Dock
 from std_srvs.srv import Trigger
 from .ik import IKWrapper
+
+from spot_msgs.action import RobotCommand  # type: ignore
 
 TRIGGER_SERVICES = [
     "claim",
@@ -33,21 +36,21 @@ TRIGGER_SERVICES = [
     "estop/hard",
     "estop/gentle",
     "estop/release",
+    "undock",
 ]
 
 
-class TriggerClient:
-    def __init__(self, node, name):
-        self.client = node.create_client(Trigger, name)
+class Client:
+    def __init__(self, node, name, srv=Trigger):
+        self.client = node.create_client(srv, name)
         while not self.client.wait_for_service(timeout_sec=1.0):
-            node.get_logger().info('service not available, waiting again...')
+            node.get_logger().info(f"service {name} not available, waiting again...")
         node.get_logger().info(f"Done with {name}")
 
 
 class DiarcWrapper(Node):
 
     def __init__(self):
-
         super().__init__('diarc_wrapper')
         self._transforms: List[geometry_msgs.msg.TransformStamped] = []
         self._client_node = rclpy.create_node('client_node')  # Create a node for calling clients
@@ -56,7 +59,9 @@ class DiarcWrapper(Node):
         # Add the clients that this node consumes
         self._service_map = {}
         for service in TRIGGER_SERVICES:  # Add all of the simple trigger services to the client node
-            self._service_map[service] = TriggerClient(self._client_node, service)
+            self._service_map[service] = Client(self._client_node, service)
+
+        self._service_map["dock"] = Client(self._client_node, "dock", Dock)
 
         # Add the services that this node provides
         self.create_service(DiarcPickUp, 'diarc_pick_up', self._diarc_pick_up_callback)
@@ -130,18 +135,23 @@ class DiarcWrapper(Node):
         return self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal)
 
     def _diarc_dock_callback(self, request, response):
-        """
+        self.get_logger().info(f"Calling dock")
+        client = self._service_map["dock"].client
+        spot_request = Dock.Request()
+        spot_request.dock_id = int(request.dockid)
+        future = client.call_async(spot_request)
+        rclpy.spin_until_future_complete(self._client_node, future)
 
-        Args:
-            request:
-            response:
-
-        Returns:
-
-        """
-        res = self._service_map[request.command].client.call_async(Trigger.Request())
-        response.success = res.success
-        response.message = res.message
+        try:
+            res = future.result()
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
+            response.success = False
+            response.message = str(e)
+        else:
+            response.success = res.success
+            response.message = res.message
+            self.get_logger().info(f"Done with dock")
         return response
 
     def _diarc_command_callback(self, request, response):

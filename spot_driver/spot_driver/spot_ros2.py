@@ -108,6 +108,7 @@ from spot_msgs.srv import (  # type: ignore
     GetVolume,
     GraphNavClearGraph,
     GraphNavGetLocalizationPose,
+    GraphNavGetLocalizationPoseUnstamped,
     GraphNavSetLocalization,
     GraphNavUploadGraph,
     InitializeLens,
@@ -854,6 +855,13 @@ class SpotROS(Node):
             GraphNavGetLocalizationPose,
             "graph_nav_get_localization_pose",
             self.handle_graph_nav_get_localization_pose,
+            callback_group=self.group,
+        )
+
+        self.create_service(
+            GraphNavGetLocalizationPoseUnstamped,
+            "graph_nav_get_localization_pose_unstamped",
+            self.handle_graph_nav_get_localization_pose_unstamped,
             callback_group=self.group,
         )
 
@@ -2559,6 +2567,44 @@ class SpotROS(Node):
             self.get_logger().info("GraphNav localization pose received")
         return response
 
+    def handle_graph_nav_get_localization_pose_unstamped(
+        self,
+        request: GraphNavGetLocalizationPoseUnstamped.Response,
+        response: GraphNavGetLocalizationPoseUnstamped.Response,
+    ) -> GraphNavGetLocalizationPoseUnstamped.Response:
+        if self.spot_wrapper is None:
+            self.get_logger().error("Spot wrapper is None")
+            response.success = False
+            response.message = "Spot wrapper is None"
+            return response
+
+        try:
+            state = self.spot_wrapper._graph_nav_client.get_localization_state()
+            if not state.localization.waypoint_id:
+                response.success = False
+                response.message = "The robot is currently not localized to the map; Please localize."
+                self.get_logger().warning(response.message)
+                return response
+            else:
+                seed_t_body_msg = bosdyn_localization_to_pose_msg(
+                    state.localization,
+                    self.spot_wrapper.robotToLocalTime,
+                    in_seed_frame=True,
+                    seed_frame=self.graph_nav_seed_frame,
+                    body_frame=self.tf_name_graph_nav_body,
+                    return_tf=False,
+                )
+                response.success = True
+                response.message = "Success"
+                response.pose = seed_t_body_msg.pose
+        except Exception as e:
+            self.get_logger().error(f"Exception Error:{e}; \n {traceback.format_exc()}")
+            response.success = False
+            response.message = f"Exception Error:{e}"
+        if response.success:
+            self.get_logger().info("GraphNav localization pose received")
+        return response
+
     def handle_graph_nav_set_localization(
         self,
         request: GraphNavSetLocalization.Request,
@@ -2787,12 +2833,19 @@ class SpotROS(Node):
             goal_handle.abort()
             return response
 
+        if goal_handle.request.initial_localization_waypoint:
+            resp = self.spot_wrapper.spot_graph_nav.navigate_initial_localization(
+                upload_path=goal_handle.request.upload_path,
+                initial_localization_fiducial=goal_handle.request.initial_localization_fiducial,
+                initial_localization_waypoint=goal_handle.request.initial_localization_waypoint,
+            )
+
+            self.run_navigate_to = False
+            feedback_thread.join()
+
         # run navigate_to
-        resp = self.spot_wrapper.spot_graph_nav._navigate_to(
-            upload_path=goal_handle.request.upload_path,
-            navigate_to=goal_handle.request.navigate_to,
-            initial_localization_fiducial=goal_handle.request.initial_localization_fiducial,
-            initial_localization_waypoint=goal_handle.request.initial_localization_waypoint,
+        resp = self.spot_wrapper.spot_graph_nav.navigate_to_existing_waypoint(
+            goal_handle.request.navigate_to
         )
         self.run_navigate_to = False
         feedback_thread.join()

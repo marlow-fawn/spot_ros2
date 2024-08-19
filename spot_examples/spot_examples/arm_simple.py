@@ -131,7 +131,7 @@ def hello_arm(robot_name: Optional[str] = None) -> bool:
         odom_T_hand.z,
         odom_T_hand.rot.w,
         odom_T_hand.rot.x,
-        odom_T_hand.rot.y,
+        odom_T_hand.rt.y,
         odom_T_hand.rot.z,
         ODOM_FRAME_NAME,
         seconds,
