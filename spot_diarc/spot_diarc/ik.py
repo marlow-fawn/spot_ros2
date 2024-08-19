@@ -1,11 +1,7 @@
 from bdai_ros2_wrappers.action_client import ActionClientWrapper
 from bdai_ros2_wrappers.tf_listener_wrapper import TFListenerWrapper
 from bosdyn.api.spot import inverse_kinematics_pb2, robot_command_pb2
-from bosdyn.client.frame_helpers import (
-    BODY_FRAME_NAME,
-    ODOM_FRAME_NAME,
-    get_a_tform_b
-)
+from bosdyn.client.frame_helpers import BODY_FRAME_NAME
 from bosdyn.client.math_helpers import Quat, SE3Pose
 from bosdyn.client.robot_command import RobotCommandBuilder
 
@@ -41,30 +37,21 @@ class IKWrapper:
                                                          client_node)
         self._ik_client = client_node.create_client(GetInverseKinematicSolutions,
                                                     "get_inverse_kinematic_solutions")
+        self.root = BODY_FRAME_NAME
 
     def move_to(self, x, y, z):
-        print("In moveto")
         """
-               Send one or more IK requests, evaluate them and move Spot accordingly.
-               Returns:
-                   True the process runs without errors, False otherwise.
-               """
-
-        root = BODY_FRAME_NAME
+       Send one or more IK requests, evaluate them and move Spot accordingly.
+       Returns:
+           True the process runs without errors, False otherwise.
+       """
         # Wait for the robot to publish the TF state.
-        self._tf_listener.wait_for_a_tform_b(root, root)
+        self._tf_listener.wait_for_a_tform_b(self.root, self.root)
 
-        # Now, let's set our tool frame to be the tip of the robot's bottom jaw. Flip the
-        # orientation so that when the hand is pointed downwards, the tool's z-axis is
-        # pointed upward.
+        # Set the "tool frame" to be the jaw
         wr1_T_tool: SE3Pose = SE3Pose(0.0, 0.0, 0.0, Quat())
-        # self._publish_transform(arm_link_wr1_frame_name, jaw_frame_name, wr1_T_tool)
 
-        # Generate several random poses in front of the task frame where we want the tool to move to.
-        # The desired tool poses are defined relative to thr task frame in front of the robot and slightly
-        # above the ground. The task frame is aligned with the "gravity aligned body frame", such that
-        # the positive-x direction is to the front of the robot, the positive-y direction is to the left
-        # of the robot, and the positive-z direction is opposite to gravity.
+        # Set the goal pose
         task_T_desired_tool = SE3Pose(x, y, z, Quat())
 
         # Define a stand command that we'll send if the IK service does not find a solution.
@@ -83,18 +70,6 @@ class IKWrapper:
         # Attempt to move to each of the desired tool pose to check the IK results.
         if ik_response.status == inverse_kinematics_pb2.InverseKinematicsResponse.Status.STATUS_OK:
             print("Solution found")
-
-            odom_T_desired_body = get_a_tform_b(
-                ik_response.robot_configuration.transforms_snapshot,
-                ODOM_FRAME_NAME,
-                BODY_FRAME_NAME,
-            )
-            mobility_params = robot_command_pb2.MobilityParams(
-                body_control=robot_command_pb2.BodyControlParams(
-                    body_pose=RobotCommandBuilder.body_pose(ODOM_FRAME_NAME, odom_T_desired_body.to_proto())
-                )
-            )
-            # stand_command = RobotCommandBuilder.synchro_stand_command(params=mobility_params)
             stand_command = RobotCommandBuilder.synchro_stand_command()
         elif ik_response.status == inverse_kinematics_pb2.InverseKinematicsResponse.Status.STATUS_NO_SOLUTION_FOUND:
             print("No solution found")
@@ -106,7 +81,7 @@ class IKWrapper:
         # Move the arm tool to the requested position.
         arm_command = RobotCommandBuilder.arm_pose_command_from_pose(
             hand_pose=task_T_desired_tool.to_proto(),
-            frame_name=root,
+            frame_name=self.root,
             seconds=3,
             build_on_command=stand_command,
         )
@@ -131,7 +106,7 @@ class IKWrapper:
             An IK solution, if any.
         """
         ik_request = inverse_kinematics_pb2.InverseKinematicsRequest(
-            root_frame_name=ODOM_FRAME_NAME,
+            root_frame_name=self.root,
             wrist_mounted_tool=inverse_kinematics_pb2.InverseKinematicsRequest.WristMountedTool(
                 wrist_tform_tool=wr1_T_tool.to_proto()
             ),

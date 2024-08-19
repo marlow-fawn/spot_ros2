@@ -10,7 +10,7 @@ import rclpy
 from bosdyn_msgs.conversions import convert
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
-from spot_diarc_msgs.srv import DiarcCommand, DiarcDock, DiarcPickup, DiarcMoveto
+from spot_diarc_msgs.srv import DiarcCommand, DiarcDock, DiarcPickUp, DiarcMoveTo
 from spot_msgs.action import RobotCommand, Manipulation  # type: ignore
 from spot_msgs.srv import GetInverseKinematicSolutions  # type: ignore
 from std_srvs.srv import Trigger
@@ -47,6 +47,7 @@ class TriggerClient:
 class DiarcWrapper(Node):
 
     def __init__(self):
+
         super().__init__('diarc_wrapper')
         self._transforms: List[geometry_msgs.msg.TransformStamped] = []
         self._client_node = rclpy.create_node('client_node')  # Create a node for calling clients
@@ -58,10 +59,10 @@ class DiarcWrapper(Node):
             self._service_map[service] = TriggerClient(self._client_node, service)
 
         # Add the services that this node provides
-        self.create_service(DiarcPickup, 'diarc_pickup', self._diarc_pickup_callback)
+        self.create_service(DiarcPickUp, 'diarc_pick_up', self._diarc_pick_up_callback)
         self.create_service(DiarcCommand, 'diarc_command', self._diarc_command_callback)
         self.create_service(DiarcDock, 'diarc_dock', self._diarc_dock_callback)
-        self.create_service(DiarcMoveto, 'diarc_moveto', self._diarc_moveto_callback)
+        self.create_service(DiarcMoveTo, 'diarc_move_to', self._diarc_move_to_callback)
 
         self._ik_wrapper = IKWrapper(self, self._client_node)
 
@@ -76,17 +77,16 @@ class DiarcWrapper(Node):
         self._service_map["sit"].client.call_async(Trigger.Request())
         self._service_map["power_off"].client.call_async(Trigger.Request())
 
-    def _diarc_moveto_callback(self, request, response):
-        print("In moveto callback")
+    def _diarc_move_to_callback(self, request, response):
+        # Todo: parse response
         res = self._ik_wrapper.move_to(request.x, request.y, request.z)
-        print(res)
         response.success = True
         return response
 
     def _diarc_go_to_location_callback(self, request, response):
         pass
 
-    def _diarc_pickup_callback(self, request, response):
+    def _diarc_pick_up_callback(self, request, response):
 
         print("In pickup")
 
@@ -130,6 +130,15 @@ class DiarcWrapper(Node):
         return self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal)
 
     def _diarc_dock_callback(self, request, response):
+        """
+
+        Args:
+            request:
+            response:
+
+        Returns:
+
+        """
         res = self._service_map[request.command].client.call_async(Trigger.Request())
         response.success = res.success
         response.message = res.message

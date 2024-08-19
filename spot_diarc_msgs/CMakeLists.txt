@@ -16,8 +16,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/DiarcCommand.srv"
   "srv/DiarcDock.srv"
-  "srv/DiarcPickup.srv"
-  "srv/DiarcMoveto.srv"
+  "srv/DiarcPickUp.srv"
+  "srv/DiarcMoveTo.srv"
 )
 
 if(BUILD_TESTING)
