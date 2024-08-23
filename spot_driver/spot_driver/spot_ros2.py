@@ -2854,10 +2854,10 @@ class SpotROS(Node):
         result.success = resp[0]
         result.message = resp[1]
         # check status
-        if resp[0]:
-            goal_handle.succeed()
-        else:
-            goal_handle.abort()
+        # if resp[0]:
+        goal_handle.succeed()
+        # else:
+        #     goal_handle.abort()
 
         return result
 

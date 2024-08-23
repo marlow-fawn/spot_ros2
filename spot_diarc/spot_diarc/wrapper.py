@@ -98,15 +98,17 @@ class DiarcWrapper(Node):
         grasp = manipulation_api_pb2.PickObjectRayInWorld(
             ray_start_rt_frame=Vec3(request.sx, request.sy, request.sz).to_proto(),
             ray_end_rt_frame=Vec3(request.ex, request.ey, request.ez).to_proto(),
-            frame_name=request.frame_name)
+            frame_name=request.frame_name,
+            walk_gaze_mode=2
+        )
 
         # We can specify where in the gripper we want to grasp. About halfway is generally good for
         # small objects like this. For a bigger object like a shoe, 0 is better (use the entire
         # gripper)
-        grasp.grasp_params.grasp_palm_to_fingertip = 0.6
-
+        grasp.grasp_params.grasp_palm_to_fingertip = 0.5
+        #
         # The axis on the gripper is the x-axis.
-        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
+        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=0, y=1, z=0)
 
         # The axis in the vision frame is the negative z-axis
         axis_to_align_with_ewrt_vision = geometry_pb2.Vec3(x=0, y=0, z=-1)
@@ -119,10 +121,11 @@ class DiarcWrapper(Node):
             axis_to_align_with_ewrt_vision)
 
         # We'll take anything within about 15 degrees for top-down or horizontal grasps.
-        constraint.vector_alignment_with_tolerance.threshold_radians = 0.25
+        constraint.vector_alignment_with_tolerance.threshold_radians = 0.5
 
         # Specify the frame we're using.
         grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME
+        # grasp.grasp_params.manipulation_camera_source = 2
 
         # Build the proto
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
@@ -132,7 +135,16 @@ class DiarcWrapper(Node):
         convert(grasp_request, action_goal.command)
         # Send the request
         print('Sending grasp request...')
-        return self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal)
+        response = DiarcPickUp.Response()
+        try:
+            result = self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal, timeout_sec=10)
+            response.success = result.success
+            response.message = result.message
+        except Exception as e:
+            self.get_logger().warn(f"Exception calling pick_object_ray_in_world goal {e}")
+            response.success = True
+            response.message = "no feedback reported"
+        return response
 
     def _diarc_dock_callback(self, request, response):
         self.get_logger().info(f"Calling dock")
