@@ -1,7 +1,8 @@
 from typing import List
 
 from bdai_ros2_wrappers.action_client import ActionClientWrapper
-from bosdyn.api import geometry_pb2, manipulation_api_pb2
+from bosdyn.api import geometry_pb2, manipulation_api_pb2, arm_command_pb2
+from bosdyn.api.trajectory_pb2 import Vec3Trajectory
 from bosdyn.client import frame_helpers
 from bosdyn.client.math_helpers import Vec3
 
@@ -91,6 +92,13 @@ class DiarcWrapper(Node):
     def _diarc_go_to_location_callback(self, request, response):
         pass
 
+    # def _diarc_gaze_callback(self, request, response):
+    #     print("In gaze")
+    #
+    #     self._robot_command_client.send_goal_and_wait(
+    #
+    #     )
+
     def _diarc_pick_up_callback(self, request, response):
 
         print("In pickup")
@@ -137,7 +145,7 @@ class DiarcWrapper(Node):
         print('Sending grasp request...')
         response = DiarcPickUp.Response()
         try:
-            result = self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal, timeout_sec=10)
+            result = self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal, timeout_sec=5)
             response.success = result.success
             response.message = result.message
         except Exception as e:
@@ -145,6 +153,10 @@ class DiarcWrapper(Node):
             response.success = True
             response.message = "no feedback reported"
         return response
+    #
+    # def _diarc_arm_movement_callback(self, request, response):
+    #     gaze = arm_command_pb2.ArmCartesianCommand.Request(
+    #         Vec3Trajectory()
 
     def _diarc_dock_callback(self, request, response):
         self.get_logger().info(f"Calling dock")
