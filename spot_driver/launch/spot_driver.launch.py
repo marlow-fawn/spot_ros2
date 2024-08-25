@@ -59,6 +59,15 @@ def launch_setup(context: LaunchContext, ld: LaunchDescription) -> None:
     )
     ld.add_action(spot_driver_node)
 
+    diarc_wrapper = launch_ros.actions.Node(
+        package="spot_diarc",
+        executable="wrapper",
+        name="diarc_wrapper",
+        output="screen",
+        namespace=spot_name,
+    )
+    ld.add_action(diarc_wrapper)
+
     if not tf_prefix and spot_name:
         tf_prefix = PathJoinSubstitution([spot_name, ""])
 
@@ -133,6 +142,14 @@ def launch_setup(context: LaunchContext, ld: LaunchDescription) -> None:
         condition=IfCondition(launch_rviz),
     )
     ld.add_action(rviz)
+
+    tf_buffer_server = launch_ros.actions.Node(
+        package="tf2_ros",
+        executable="buffer_server",
+        name="buffer_server",
+        output="screen",
+    )
+    ld.add_action(tf_buffer_server)
 
     spot_image_publishers = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([FindPackageShare(THIS_PACKAGE), "/launch", "/spot_image_publishers.launch.py"]),

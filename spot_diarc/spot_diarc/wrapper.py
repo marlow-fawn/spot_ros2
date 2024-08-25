@@ -18,6 +18,8 @@ from spot_msgs.srv import Dock
 from std_srvs.srv import Trigger
 from .ik import IKWrapper
 
+import time
+
 from spot_msgs.action import RobotCommand  # type: ignore
 
 TRIGGER_SERVICES = [
@@ -55,7 +57,9 @@ class DiarcWrapper(Node):
         super().__init__('diarc_wrapper')
         self._transforms: List[geometry_msgs.msg.TransformStamped] = []
         self._client_node = rclpy.create_node('client_node')  # Create a node for calling clients
-        self._robot_command_client = ActionClientWrapper(Manipulation, "manipulation", self)
+        # self._robot_command_client = ActionClientWrapper(Manipulation, "manipulation", self)
+        self._robot_command_client : rclpy.action.ActionClient = rclpy.action.ActionClient(self, Manipulation, "manipulation")
+        self._robot_command_client.wait_for_server()
 
         # Add the clients that this node consumes
         self._service_map = {}
@@ -144,15 +148,50 @@ class DiarcWrapper(Node):
         # Send the request
         print('Sending grasp request...')
         response = DiarcPickUp.Response()
-        try:
-            result = self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal, timeout_sec=5)
+
+        terminated = False
+
+        def goal_response_callback(future):
+            goal_handle = future.result()
+            if not goal_handle.accepted:
+                self.get_logger().info('Goal rejected :(')
+                return
+
+            self.get_logger().info('Goal accepted :)')
+
+            _get_result_future = goal_handle.get_result_async()
+            _get_result_future.add_done_callback(get_result_callback)
+
+            _get_result_future = goal_handle.get_result_async()
+            _get_result_future.add_done_callback(get_result_callback)
+
+        def get_result_callback(future):
+            nonlocal response
+            nonlocal terminated
+            result = future.result().result
+            # self.get_logger().info('Result: {0}'.format(result))
             response.success = result.success
-            response.message = result.message
-        except Exception as e:
-            self.get_logger().warn(f"Exception calling pick_object_ray_in_world goal {e}")
-            response.success = True
-            response.message = "no feedback reported"
+            response.message = response.message
+            terminated = True
+
+        def feedback_callback(feedback_msg):
+            feedback = feedback_msg.feedback
+            # self.get_logger().info('Received feedback: {0}'.format(feedback))
+
+        future = self._robot_command_client.send_goal_async(action_goal, feedback_callback=feedback_callback)
+        future.add_done_callback(goal_response_callback)
+
         return response
+
+        # try:
+        #     result = self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal, timeout_sec=5)
+        #     response.success = result.success
+        #     response.message = result.message
+        # except Exception as e:
+        #     self.get_logger().warn(f"Exception calling pick_object_ray_in_world goal {e}")
+        #     response.success = True
+        #     response.message = "no feedback reported"
+        # return response
     #
     # def _diarc_arm_movement_callback(self, request, response):
     #     gaze = arm_command_pb2.ArmCartesianCommand.Request(
@@ -202,7 +241,6 @@ def main():
     diarc_wrapper = DiarcWrapper()
     rclpy.spin(diarc_wrapper)
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
