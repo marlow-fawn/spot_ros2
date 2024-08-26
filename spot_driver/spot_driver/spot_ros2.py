@@ -137,6 +137,7 @@ from spot_msgs.srv import (  # type: ignore
 )
 from spot_msgs.srv import (  # type: ignore
     RobotCommand as RobotCommandService,
+    Manipulation as ManipulationService,
 )
 from spot_wrapper.cam_wrapper import SpotCamCamera, SpotCamWrapper
 from spot_wrapper.wrapper import SpotWrapper
@@ -937,6 +938,18 @@ class SpotROS(Node):
             lambda request, response: self.service_wrapper(
                 "robot_command",
                 self.handle_robot_command_service,
+                request,
+                response,
+            ),
+            callback_group=self.group,
+        )
+
+        self.create_service(
+            ManipulationService,
+            "manipulation",
+            lambda request, response: self.service_wrapper(
+                "robot_command",
+                self.handle_manipulation_service,
                 request,
                 response,
             ),
@@ -2174,6 +2187,32 @@ class SpotROS(Node):
                 response.robot_command_id = robot_command_id
         else:
             response.success = True
+        return response
+
+    def handle_manipulation_service(
+            self, request: ManipulationService.Request, response: ManipulationService.Response
+    ) -> ManipulationService.Response:
+        proto_command = manipulation_api_pb2.ManipulationApiRequest()
+        convert(request.command, proto_command)
+        if self.spot_wrapper is not None:
+            _, _, manip_command_id = self.spot_wrapper.manipulation_command(proto_command)
+            if manip_command_id is not None:
+                response.manip_command_id = manip_command_id
+
+        #todo: implement timeout
+        feedback = None
+        while self._manipulation_goal_complete(feedback) == GoalResponse.IN_PROGRESS:
+            feedback = self._get_manipulation_command_feedback(manip_command_id)
+            self.get_logger().info(f"current state: {feedback.current_state.value}")
+        if self._manipulation_goal_complete(feedback) == GoalResponse.FAILED:
+            response.success = False
+            response.message = "Manipulation failed"
+        elif self._manipulation_goal_complete(feedback) == GoalResponse.SUCCESS:
+            response.success = True
+            response.message = "Manipulation succeeeded"
+        else:
+            response.success = False
+            response.message = "Unknown state for manipulation"
         return response
 
     def handle_robot_command_action(self, goal_handle: ServerGoalHandle) -> RobotCommandAction.Result:

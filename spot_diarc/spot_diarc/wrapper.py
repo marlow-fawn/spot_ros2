@@ -1,26 +1,20 @@
+import time
 from typing import List
-
-from bdai_ros2_wrappers.action_client import ActionClientWrapper
-from bosdyn.api import geometry_pb2, manipulation_api_pb2, arm_command_pb2
-from bosdyn.api.trajectory_pb2 import Vec3Trajectory
-from bosdyn.client import frame_helpers
-from bosdyn.client.math_helpers import Vec3
 
 import geometry_msgs
 import rclpy
+from bosdyn.api import geometry_pb2, manipulation_api_pb2
+from bosdyn.client import frame_helpers
+from bosdyn.client.math_helpers import Vec3
 from bosdyn_msgs.conversions import convert
-from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from spot_diarc_msgs.srv import DiarcCommand, DiarcDock, DiarcPickUp, DiarcMoveTo
-from spot_msgs.action import RobotCommand, Manipulation  # type: ignore
+from spot_msgs.srv import Dock, Manipulation
 from spot_msgs.srv import GetInverseKinematicSolutions  # type: ignore
-from spot_msgs.srv import Dock
 from std_srvs.srv import Trigger
+
 from .ik import IKWrapper
-
-import time
-
-from spot_msgs.action import RobotCommand  # type: ignore
+from .command_handle import CommandHandle, CommandClient
 
 TRIGGER_SERVICES = [
     "claim",
@@ -58,8 +52,8 @@ class DiarcWrapper(Node):
         self._transforms: List[geometry_msgs.msg.TransformStamped] = []
         self._client_node = rclpy.create_node('client_node')  # Create a node for calling clients
         # self._robot_command_client = ActionClientWrapper(Manipulation, "manipulation", self)
-        self._robot_command_client : rclpy.action.ActionClient = rclpy.action.ActionClient(self, Manipulation, "manipulation")
-        self._robot_command_client.wait_for_server()
+        # self._robot_command_client : rclpy.action.ActionClient = rclpy.action.ActionClient(self, Manipulation, "manipulation")
+        # self._robot_command_client.wait_for_server()
 
         # Add the clients that this node consumes
         self._service_map = {}
@@ -67,6 +61,7 @@ class DiarcWrapper(Node):
             self._service_map[service] = Client(self._client_node, service)
 
         self._service_map["dock"] = Client(self._client_node, "dock", Dock)
+        self._service_map["manipulation"] = Client(self._client_node, "manipulation", Manipulation)
 
         # Add the services that this node provides
         self.create_service(DiarcPickUp, 'diarc_pick_up', self._diarc_pick_up_callback)
@@ -143,43 +138,27 @@ class DiarcWrapper(Node):
         grasp_request = manipulation_api_pb2.ManipulationApiRequest(
             pick_object_ray_in_world=grasp)
 
-        action_goal = Manipulation.Goal()
-        convert(grasp_request, action_goal.command)
+        request = Manipulation.Request()
+        convert(grasp_request, request.command)
         # Send the request
-        print('Sending grasp request...')
         response = DiarcPickUp.Response()
 
-        terminated = False
+        # client = CommandClient(self._robot_command_client)
+        # success, message = client.send_command_and_wait(action_goal)
 
-        def goal_response_callback(future):
-            goal_handle = future.result()
-            if not goal_handle.accepted:
-                self.get_logger().info('Goal rejected :(')
-                return
-
-            self.get_logger().info('Goal accepted :)')
-
-            _get_result_future = goal_handle.get_result_async()
-            _get_result_future.add_done_callback(get_result_callback)
-
-            _get_result_future = goal_handle.get_result_async()
-            _get_result_future.add_done_callback(get_result_callback)
-
-        def get_result_callback(future):
-            nonlocal response
-            nonlocal terminated
-            result = future.result().result
-            # self.get_logger().info('Result: {0}'.format(result))
-            response.success = result.success
-            response.message = response.message
-            terminated = True
-
-        def feedback_callback(feedback_msg):
-            feedback = feedback_msg.feedback
-            # self.get_logger().info('Received feedback: {0}'.format(feedback))
-
-        future = self._robot_command_client.send_goal_async(action_goal, feedback_callback=feedback_callback)
-        future.add_done_callback(goal_response_callback)
+        client = self._service_map["manipulation"].client
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self._client_node, future)
+        try:
+            res = future.result()
+        except Exception as e:
+            self.get_logger().error(f"Service call failed: {e}")
+            response.success = False
+            response.message = str(e)
+        else:
+            response.success = res.success
+            response.message = res.message
+            self.get_logger().info(f"Done with grasp")
 
         return response
 

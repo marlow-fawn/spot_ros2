@@ -1,0 +1,6 @@
+bosdyn_api_msgs/ManipulationApiRequest command
+---
+bool success
+string message
+
+uint32 manip_command_id

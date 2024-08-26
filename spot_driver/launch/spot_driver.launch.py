@@ -66,7 +66,7 @@ def launch_setup(context: LaunchContext, ld: LaunchDescription) -> None:
         output="screen",
         namespace=spot_name,
     )
-    ld.add_action(diarc_wrapper)
+    # ld.add_action(diarc_wrapper)
 
     if not tf_prefix and spot_name:
         tf_prefix = PathJoinSubstitution([spot_name, ""])
