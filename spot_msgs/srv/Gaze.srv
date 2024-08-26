@@ -1,0 +1,11 @@
+float32 x
+float32 y
+float32 z
+string frame
+float32 pitch_angle
+float32 tx
+float32 ty
+float32 tz
+---
+bool success
+string message

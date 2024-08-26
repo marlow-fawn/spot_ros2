@@ -31,13 +31,15 @@ from bosdyn.api import (
     manipulation_api_pb2,
     robot_command_pb2,
     trajectory_pb2,
-    world_object_pb2,
+    world_object_pb2, arm_command_pb2, synchronized_command_pb2,
 )
-from bosdyn.api.geometry_pb2 import Quaternion, SE2VelocityLimit
+from bosdyn.api.geometry_pb2 import Quaternion, SE2VelocityLimit, SE3Pose
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.api.spot.choreography_sequence_pb2 import Animation, ChoreographySequence, ChoreographyStatusResponse
 from bosdyn.client import math_helpers
 from bosdyn.client.exceptions import InternalServerError
+from bosdyn.client.math_helpers import Quat
+from bosdyn.client.robot_command import RobotCommandBuilder
 from bosdyn_api_msgs.math_helpers import bosdyn_localization_to_pose_msg
 from bosdyn_msgs.conversions import convert
 from bosdyn_msgs.msg import (
@@ -138,6 +140,7 @@ from spot_msgs.srv import (  # type: ignore
 from spot_msgs.srv import (  # type: ignore
     RobotCommand as RobotCommandService,
     Manipulation as ManipulationService,
+    Gaze as GazeService,
 )
 from spot_wrapper.cam_wrapper import SpotCamCamera, SpotCamWrapper
 from spot_wrapper.wrapper import SpotWrapper
@@ -950,6 +953,18 @@ class SpotROS(Node):
             lambda request, response: self.service_wrapper(
                 "robot_command",
                 self.handle_manipulation_service,
+                request,
+                response,
+            ),
+            callback_group=self.group,
+        )
+
+        self.create_service(
+            GazeService,
+            "gaze",
+            lambda request, response: self.service_wrapper(
+                "gaze_command",
+                self.handle_gaze_service,
                 request,
                 response,
             ),
@@ -2189,6 +2204,78 @@ class SpotROS(Node):
             response.success = True
         return response
 
+    #todo this is duplicated from robot_command for source control reasons.
+    @staticmethod
+    def arm_gaze_command(x, y, z, frame_name, build_on_command=None, frame2_tform_desired_hand=None,
+                         frame2_name=None, wrist_tform_tool=None, max_linear_vel=None, max_angular_vel=None,
+                         max_accel=None):
+        """ Builds a Vec3Trajectory to tell the robot arm to gaze at a point in 3D space.
+        Returns:
+            RobotCommand, which can be issued to the robot command service
+        """
+        pos = geometry_pb2.Vec3(x=x, y=y, z=z)
+        point1 = trajectory_pb2.Vec3TrajectoryPoint(point=pos)
+
+        traj = trajectory_pb2.Vec3Trajectory(points=[point1])
+        # Build the proto
+        gaze_cmd = arm_command_pb2.GazeCommand.Request(target_trajectory_in_frame1=traj,
+                                                       frame1_name=frame_name, wrist_tform_tool=wrist_tform_tool)
+
+        if frame2_tform_desired_hand is not None and frame2_name is not None:
+            if isinstance(frame2_tform_desired_hand, SE3Pose):
+                # Convert input argument from math_helpers class to protobuf message.
+                frame2_tform_desired_hand = frame2_tform_desired_hand.to_proto()
+
+            desired_point = trajectory_pb2.SE3TrajectoryPoint(pose=frame2_tform_desired_hand)
+            gaze_cmd.tool_trajectory_in_frame2.points.extend([desired_point])
+            gaze_cmd.frame2_name = frame2_name
+
+        if max_linear_vel is not None:
+            gaze_cmd.max_linear_velocity.value = max_linear_vel
+        if max_angular_vel is not None:
+            gaze_cmd.max_angular_velocity.value = max_angular_vel
+        if max_accel is not None:
+            gaze_cmd.maximum_acceleration.value = max_accel
+
+        arm_command = arm_command_pb2.ArmCommand.Request(arm_gaze_command=gaze_cmd)
+        synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
+            arm_command=arm_command)
+        robot_command = robot_command_pb2.RobotCommand(synchronized_command=synchronized_command)
+        if build_on_command:
+            return RobotCommandBuilder.build_synchro_command(build_on_command, robot_command)
+        return robot_command
+
+    def handle_gaze_service(
+            self, request: GazeService.Request, response: ManipulationService.Response
+    ) -> GazeService.Response:
+        x = request.x
+        y = request.y
+        z = request.z
+        frame_name = request.frame
+
+        response = GazeService.Response()
+        response.success = False
+        try:
+            rot = math_helpers.Quat.from_pitch(request.pitch_angle)
+            tool_tform = math_helpers.SE3Pose(request.tx, request.ty, request.tz, rot)
+            gaze_command = SpotROS.arm_gaze_command(x,y,z,frame_name=frame_name,max_accel=5,max_linear_vel=1,max_angular_vel=1, wrist_tform_tool=tool_tform.to_proto())
+            cmd_id = self.spot_wrapper.spot_arm._robot_command_client.robot_command(gaze_command)
+            self._logger.info(f"Command gaze issued at ({x},{y},{z}) in frame {frame_name}")
+            self.spot_wrapper.spot_arm.wait_for_arm_command_to_complete(cmd_id)
+            response.success = True
+            response.message = "Gaze successful"
+            stop_command = arm_command_pb2.ArmStopCommand.Request()
+            arm_command = arm_command_pb2.ArmCommand.Request(arm_stop_command=stop_command)
+            synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
+                arm_command=arm_command)
+            robot_command = robot_command_pb2.RobotCommand(synchronized_command=synchronized_command)
+            self.spot_wrapper.spot_arm._robot_command_client.robot_command(robot_command)
+
+        except Exception as e:
+            self._logger.error(f"Unable to execute manipulation command: {e}")
+            response.message = str(e)
+        return response
+
     def handle_manipulation_service(
             self, request: ManipulationService.Request, response: ManipulationService.Response
     ) -> ManipulationService.Response:
@@ -2201,18 +2288,22 @@ class SpotROS(Node):
 
         #todo: implement timeout
         feedback = None
-        while self._manipulation_goal_complete(feedback) == GoalResponse.IN_PROGRESS:
+        duration = -1
+        start = time.time()
+        #todo: hardcoded timeout of 30 seconds is bad
+        while self._manipulation_goal_complete(feedback) == GoalResponse.IN_PROGRESS and duration < 15:
             feedback = self._get_manipulation_command_feedback(manip_command_id)
-            self.get_logger().info(f"current state: {feedback.current_state.value}")
+            self.get_logger().debug(f"current state: {feedback.current_state.value}")
+            duration = int(time.time() - start)
         if self._manipulation_goal_complete(feedback) == GoalResponse.FAILED:
             response.success = False
             response.message = "Manipulation failed"
         elif self._manipulation_goal_complete(feedback) == GoalResponse.SUCCESS:
             response.success = True
             response.message = "Manipulation succeeeded"
-        else:
+        elif self._manipulation_goal_complete(feedback) == GoalResponse.IN_PROGRESS:
             response.success = False
-            response.message = "Unknown state for manipulation"
+            response.message = ""
         return response
 
     def handle_robot_command_action(self, goal_handle: ServerGoalHandle) -> RobotCommandAction.Result:

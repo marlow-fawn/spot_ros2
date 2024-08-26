@@ -14,7 +14,6 @@ from spot_msgs.srv import GetInverseKinematicSolutions  # type: ignore
 from std_srvs.srv import Trigger
 
 from .ik import IKWrapper
-from .command_handle import CommandHandle, CommandClient
 
 TRIGGER_SERVICES = [
     "claim",
@@ -91,12 +90,6 @@ class DiarcWrapper(Node):
     def _diarc_go_to_location_callback(self, request, response):
         pass
 
-    # def _diarc_gaze_callback(self, request, response):
-    #     print("In gaze")
-    #
-    #     self._robot_command_client.send_goal_and_wait(
-    #
-    #     )
 
     def _diarc_pick_up_callback(self, request, response):
 
@@ -128,7 +121,7 @@ class DiarcWrapper(Node):
             axis_to_align_with_ewrt_vision)
 
         # We'll take anything within about 15 degrees for top-down or horizontal grasps.
-        constraint.vector_alignment_with_tolerance.threshold_radians = 0.5
+        constraint.vector_alignment_with_tolerance.threshold_radians = 0.25
 
         # Specify the frame we're using.
         grasp.grasp_params.grasp_params_frame_name = frame_helpers.VISION_FRAME_NAME
@@ -158,23 +151,12 @@ class DiarcWrapper(Node):
         else:
             response.success = res.success
             response.message = res.message
-            self.get_logger().info(f"Done with grasp")
 
+        if response.success:
+            self.get_logger().info(f"Grasp succeeded")
+        else:
+            self.get_logger().info(f"Grasp failed: {response.message}")
         return response
-
-        # try:
-        #     result = self._robot_command_client.send_goal_and_wait("pick_object_ray_in_world", action_goal, timeout_sec=5)
-        #     response.success = result.success
-        #     response.message = result.message
-        # except Exception as e:
-        #     self.get_logger().warn(f"Exception calling pick_object_ray_in_world goal {e}")
-        #     response.success = True
-        #     response.message = "no feedback reported"
-        # return response
-    #
-    # def _diarc_arm_movement_callback(self, request, response):
-    #     gaze = arm_command_pb2.ArmCartesianCommand.Request(
-    #         Vec3Trajectory()
 
     def _diarc_dock_callback(self, request, response):
         self.get_logger().info(f"Calling dock")
