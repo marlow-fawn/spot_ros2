@@ -88,6 +88,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RobotCommand.srv"
   "srv/Manipulation.srv"
   "srv/Gaze.srv"
+  "srv/ArmCommand.srv"
   "srv/StoreLogpoint.srv"
   "srv/TagLogpoint.srv"
   "srv/GetLEDBrightness.srv"

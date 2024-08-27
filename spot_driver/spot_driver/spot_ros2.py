@@ -141,6 +141,7 @@ from spot_msgs.srv import (  # type: ignore
     RobotCommand as RobotCommandService,
     Manipulation as ManipulationService,
     Gaze as GazeService,
+    ArmCommand as ArmCommandService,
 )
 from spot_wrapper.cam_wrapper import SpotCamCamera, SpotCamWrapper
 from spot_wrapper.wrapper import SpotWrapper
@@ -965,6 +966,18 @@ class SpotROS(Node):
             lambda request, response: self.service_wrapper(
                 "gaze_command",
                 self.handle_gaze_service,
+                request,
+                response,
+            ),
+            callback_group=self.group,
+        )
+
+        self.create_service(
+            ArmCommandService,
+            "arm_command",
+            lambda request, response: self.service_wrapper(
+                "arm_command",
+                self.handle_arm_command_service,
                 request,
                 response,
             ),
@@ -2273,6 +2286,40 @@ class SpotROS(Node):
 
         except Exception as e:
             self._logger.error(f"Unable to execute manipulation command: {e}")
+            response.message = str(e)
+        return response
+
+
+    def handle_arm_command_service(
+            self, request: ArmCommandService.Request, response: ArmCommandService.Response
+    ) -> GazeService.Response:
+        x = request.x
+        y = request.y
+        z = request.z
+        root_frame_name = request.root_frame_name
+        rx = request.rx
+        ry = request.ry
+        rz = request.rz
+        rw = request.rw
+
+        response = ArmCommandService.Response()
+        response.success = False
+        try:
+            command = RobotCommandBuilder.arm_pose_command(x, y, z, rw, rx, ry, rz, root_frame_name)
+            cmd_id = self.spot_wrapper.spot_arm._robot_command_client.robot_command(command)
+            self._logger.info(f"Command go to arm pose issued at ({x},{y},{z}, rot: {rx},{ry},{rz},{rw}) in frame {root_frame_name}")
+            self.spot_wrapper.spot_arm.wait_for_arm_command_to_complete(cmd_id)
+            response.success = True
+            response.message = "Go to arm pose successful"
+            stop_command = arm_command_pb2.ArmStopCommand.Request()
+            arm_command = arm_command_pb2.ArmCommand.Request(arm_stop_command=stop_command)
+            synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
+                arm_command=arm_command)
+            robot_command = robot_command_pb2.RobotCommand(synchronized_command=synchronized_command)
+            self.spot_wrapper.spot_arm._robot_command_client.robot_command(robot_command)
+
+        except Exception as e:
+            self._logger.error(f"Unable to execute arm pose command: {e}")
             response.message = str(e)
         return response
 
