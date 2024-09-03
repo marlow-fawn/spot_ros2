@@ -2305,7 +2305,7 @@ class SpotROS(Node):
         response = ArmCommandService.Response()
         response.success = False
         try:
-            command = RobotCommandBuilder.arm_pose_command(x, y, z, rw, rx, ry, rz, root_frame_name)
+            command = RobotCommandBuilder.arm_pose_command(x, y, z, rw, rx, ry, rz, root_frame_name, seconds=2)
             cmd_id = self.spot_wrapper.spot_arm._robot_command_client.robot_command(command)
             self._logger.info(f"Command go to arm pose issued at ({x},{y},{z}, rot: {rx},{ry},{rz},{rw}) in frame {root_frame_name}")
             self.spot_wrapper.spot_arm.wait_for_arm_command_to_complete(cmd_id)
